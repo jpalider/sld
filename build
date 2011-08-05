@@ -1,0 +1,1 @@
+( export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/home/mumin/Software/OpenWrt-SDK-at91-for-Linux-i686/staging_dir/toolchain-arm_gcc4.1.2/bin; colormake ARCH=arm CROSS_COMPILE=arm-linux- )
