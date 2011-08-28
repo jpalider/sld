@@ -46,12 +46,14 @@
 #define DISPLAY_ON	(!DISPLAY_OFF)
 
 static ssize_t sld_write(struct file *filp, const char __user *buff,
-			     size_t count, loff_t *offp);
+			 size_t count, loff_t *offp);
 static ssize_t sld_read(struct file *filp, char __user *buff,
-			    size_t count, loff_t *offp);
+			size_t count, loff_t *offp);
 static loff_t sld_llseek(struct file *filp, loff_t off, int whence);
 
 static int sld_hw_write(unsigned char *buffer, size_t count);
+static int sld_hw_write_diff(unsigned char *buffer, size_t count,
+			     unsigned char *buffer_diff);
 static int sld_hw_init(void);
 static void sld_hw_dbus(unsigned char c);
 static void sld_hw_e(void);
@@ -71,7 +73,10 @@ static void sld_wq_write(struct work_struct*);
 
 static const size_t BUFFER_SIZE = LINES * CHARS_PER_LINE;
 //#define BUFFER_SIZE LINES * CHARS_PER_LINE
-static char sld_buffer[LINES * CHARS_PER_LINE];
+static char sld_buffer_1[LINES * CHARS_PER_LINE];
+static char sld_buffer_2[LINES * CHARS_PER_LINE];
+static char *sld_buffer = sld_buffer_1;
+static char *sld_buffer_back = sld_buffer_2;
 static struct semaphore sld_semaphore;
 struct workqueue_struct *sld_workqueue;
 
@@ -81,6 +86,7 @@ struct workqueue_struct *sld_workqueue;
 static DECLARE_WORK(sld_work_write, sld_wq_write);
 #endif
 
+/* Needs putting dev fs */
 static unsigned int dbus_to_pin[8] = {
 	PIN_D0,
 	PIN_D1,
@@ -109,7 +115,7 @@ static dev_t sld_dev;
 #define SLD_WORKQUEUE "sld_workqueue"
 
 static ssize_t sld_write(struct file *filp, const char __user *buff,
-			     size_t count, loff_t *offp)
+			 size_t count, loff_t *offp)
 
 {
 	int ret = 0;
@@ -122,22 +128,21 @@ static ssize_t sld_write(struct file *filp, const char __user *buff,
 		ret = -EFAULT;
 		goto out;
 	}
-	
-	*offp += len;//!
-	ret = len > count ? len : count;
-	
-	if (filp->f_flags==O_NONBLOCK || filp->f_flags==O_NDELAY) {
-		ret = -EAGAIN;
-		queue_work(sld_workqueue, &sld_work_write);
 
+	if (count > len) {
+		ret = ENOBUFS;
+		goto out;
 	} else {
-
+		*offp += count;
+		ret = count;
+	}
+	if (filp->f_flags==O_NONBLOCK || filp->f_flags==O_NDELAY) {
+		queue_work(sld_workqueue, &sld_work_write);
+	} else {
+		sld_wq_write(NULL);
 	}
 
-
-	sld_buffer[*offp] = 0;
 	printk(KERN_INFO "sld_buffer = %s\n",  sld_buffer);	
-
 out:
 	up(&sld_semaphore);
 
@@ -152,18 +157,33 @@ static void sld_do_write(void)
 	sld_hw_write(sld_buffer, 16);
 	sld_hw_line(LINE_1);
 	sld_hw_write(sld_buffer + 16, 16);
+	/*
+	  sld_hw_clear();
+	  sld_hw_line(LINE_0);
+	  sld_hw_write(sld_buffer, 16, sld_buffer_back);
+	  sld_hw_line(LINE_1);
+	  sld_hw_write(sld_buffer + 16, 16, sld_buffer_back);
+
+	 */
 }
 
 static void sld_wq_write(struct work_struct *work)
 {
 	sld_do_write();
+	/*
+	static char *tmp_buffer = sld_buffer_back;
+	sld_buffer_back = sld_buffer;
+	sld_buffer = tmp_buffer;
+	*/
 }
 
 
 static ssize_t sld_read(struct file *filp, char __user *buff,
-			    size_t count, loff_t *offp)
+			size_t count, loff_t *offp)
 {
-	int ret = 0;
+	return ENOSYS; /*not implemented*/
+/*
+  int ret = 0;
 	if (copy_to_user(buff, "not implemented\n", 16)) {
 		ret = -EFAULT;
 		goto out;
@@ -176,6 +196,7 @@ static ssize_t sld_read(struct file *filp, char __user *buff,
 	}
 out:	
 	return ret;
+*/
 }
  
 static loff_t sld_llseek(struct file *filp, loff_t off, int whence)
@@ -220,12 +241,24 @@ static void sld_hw_line(int line)
 
 static int sld_hw_write(unsigned char *buffer, size_t count)
 {
+	return sld_hw_write_diff(buffer, count, buffer);
+}
+
+static int sld_hw_write_diff(unsigned char *buffer, size_t count,
+			     unsigned char *buffer_diff)
+{
 	int i;
 	int k = 40;
 	at91_set_gpio_value(PIN_RW, RW_WRITE);
 	at91_set_gpio_value(PIN_RS, RS_DATA);
 	delay_1us();
 	for (i = 0; i < count; i++) {
+		/*
+		if (!(buffer[i]-buffer_diff[i])) {
+			sld_inc_addr(); is it worth ?
+			continue;
+		}
+		*/
 		sld_hw_dbus(buffer[i]);
 		sld_hw_e();
 		k = 40;
@@ -235,6 +268,7 @@ static int sld_hw_write(unsigned char *buffer, size_t count)
 		
 	return 0;
 }
+
 
 static void sld_hw_dbus(unsigned char c)
 {
