@@ -13,7 +13,7 @@
 #include <linux/version.h>
 
 #define DEVICE_NAME "lcd driver"
-#define SLD "sld"
+#define SLD "lcd"
 
 #define LINES 2
 #define CHARS_PER_LINE 16
@@ -70,6 +70,7 @@ static void delay_5ms(void);
 
 static void sld_do_write(void);
 static void sld_wq_write(struct work_struct*);
+static void sld_switch_buffers(void);
 
 static const size_t BUFFER_SIZE = LINES * CHARS_PER_LINE;
 //#define BUFFER_SIZE LINES * CHARS_PER_LINE
@@ -80,11 +81,7 @@ static char *sld_buffer_back = sld_buffer_2;
 static struct semaphore sld_semaphore;
 struct workqueue_struct *sld_workqueue;
 
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,16)
-//DECLARE_WORK(sld_work_write, sld_workqueue_write);
-#else
 static DECLARE_WORK(sld_work_write, sld_wq_write);
-#endif
 
 /* Needs putting dev fs */
 static unsigned int dbus_to_pin[8] = {
@@ -120,9 +117,13 @@ static ssize_t sld_write(struct file *filp, const char __user *buff,
 {
 	int ret = 0;
 	int len = min(count, BUFFER_SIZE - (size_t)*offp);
-
-	if (down_interruptible(&sld_semaphore))
+	if (filp->f_flags==O_NONBLOCK || filp->f_flags==O_NDELAY) {
+		if (down_trylock(&sld_semaphore)) {
+			return -EAGAIN;
+		}
+	} else 	if (down_interruptible(&sld_semaphore)) {
 		return -ERESTARTSYS;
+	}
 
 	if (copy_from_user(sld_buffer + *offp, buff, len)) {
 		ret = -EFAULT;
@@ -136,13 +137,8 @@ static ssize_t sld_write(struct file *filp, const char __user *buff,
 		*offp += count;
 		ret = count;
 	}
-	if (filp->f_flags==O_NONBLOCK || filp->f_flags==O_NDELAY) {
-		queue_work(sld_workqueue, &sld_work_write);
-	} else {
-		sld_wq_write(NULL);
-	}
-
-	printk(KERN_INFO "sld_buffer = %s\n",  sld_buffer);	
+	queue_work(sld_workqueue, &sld_work_write);
+	/* printk(KERN_INFO "sld_buffer = %s\n",  sld_buffer);	 */
 out:
 	up(&sld_semaphore);
 
@@ -151,32 +147,36 @@ out:
 
 static void sld_do_write(void)
 {
+#if 0
 	printk(KERN_INFO "%s\n", __FUNCTION__);
 	sld_hw_clear();
 	sld_hw_line(LINE_0);
 	sld_hw_write(sld_buffer, 16);
 	sld_hw_line(LINE_1);
 	sld_hw_write(sld_buffer + 16, 16);
-	/*
-	  sld_hw_clear();
-	  sld_hw_line(LINE_0);
-	  sld_hw_write(sld_buffer, 16, sld_buffer_back);
-	  sld_hw_line(LINE_1);
-	  sld_hw_write(sld_buffer + 16, 16, sld_buffer_back);
+#else
+	sld_hw_clear();
+	sld_hw_line(LINE_0);
+	sld_hw_write_diff(sld_buffer, 16, sld_buffer_back);
+	sld_hw_line(LINE_1);
+	sld_hw_write_diff(sld_buffer + 16, 16, sld_buffer_back);
 
-	 */
+#endif
 }
 
 static void sld_wq_write(struct work_struct *work)
 {
 	sld_do_write();
-	/*
-	static char *tmp_buffer = sld_buffer_back;
-	sld_buffer_back = sld_buffer;
-	sld_buffer = tmp_buffer;
-	*/
+	sld_switch_buffers();
 }
 
+static void sld_switch_buffers(void)
+{
+	char *tmp_buffer;
+	tmp_buffer = sld_buffer_back;
+	sld_buffer_back = sld_buffer;
+	sld_buffer = tmp_buffer;
+}
 
 static ssize_t sld_read(struct file *filp, char __user *buff,
 			size_t count, loff_t *offp)
@@ -214,7 +214,7 @@ static loff_t sld_llseek(struct file *filp, loff_t off, int whence)
 
 	case 2: /* SEEK_END */
 		newpos = BUFFER_SIZE - 1 - off;
-		break;
+ 		break;
 
 	default: /* can't happen */
 		return -EINVAL;
@@ -236,7 +236,6 @@ static void sld_hw_line(int line)
 	sld_hw_dbus(0x80 | line);
 	sld_hw_e();
 	delay_1ms();
-
 }
 
 static int sld_hw_write(unsigned char *buffer, size_t count)
@@ -253,14 +252,15 @@ static int sld_hw_write_diff(unsigned char *buffer, size_t count,
 	at91_set_gpio_value(PIN_RS, RS_DATA);
 	delay_1us();
 	for (i = 0; i < count; i++) {
-		/*
+		/* TODO
 		if (!(buffer[i]-buffer_diff[i])) {
-			sld_inc_addr(); is it worth ?
+			sld_inc_addr(); is it worth ? yes, when cumulating
 			continue;
 		}
 		*/
 		sld_hw_dbus(buffer[i]);
 		sld_hw_e();
+		/* TODO */
 		k = 40;
 		while(k--)
 			delay_1us();
@@ -278,7 +278,7 @@ static void sld_hw_dbus(unsigned char c)
 		c >>= 1;
 	}
 }
-/*
+/* TODO
 static unsigned char sld_hw_dbus_read()
 {
 	int i;
@@ -360,6 +360,7 @@ static int sld_hw_busy(void)
 {
 	int val = 0;
 /*
+  TODO:
   not sure how it goes...
 	at91_set_gpio_value(PIN_RS, RS_INST);
 	at91_set_gpio_value(PIN_RW, RW_READ);
@@ -477,7 +478,7 @@ static int __init sld_init(void)
 static void __exit sld_exit(void)
 {
 	destroy_workqueue(sld_workqueue);
-//	void device_unregister(struct device *dev);
+	/* void device_unregister(struct device *dev); */
 	device_destroy(sld_class, sld_dev);
 	class_destroy(sld_class);
 	cdev_del(sld_cdev);
