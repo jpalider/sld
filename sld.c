@@ -55,7 +55,9 @@ static int sld_hw_write(unsigned char *buffer, size_t count);
 static int sld_hw_write_diff(unsigned char *buffer, size_t count,
 			     unsigned char *buffer_diff);
 static int sld_hw_init(void);
-static void sld_hw_dbus(unsigned char c);
+static void sld_hw_dbus_write(unsigned char c);
+static unsigned char sld_hw_dbus_read(void);
+static void sld_hw_set_ac(int address);
 static void sld_hw_e(void);
 static void sld_hw_line(int);
 static void sld_hw_clear(void);
@@ -156,6 +158,7 @@ static void sld_do_write(void)
 	sld_hw_write(sld_buffer + 16, 16);
 #else
 	sld_hw_clear();
+	//delay_5ms();
 	sld_hw_line(LINE_0);
 	sld_hw_write_diff(sld_buffer, 16, sld_buffer_back);
 	sld_hw_line(LINE_1);
@@ -181,6 +184,13 @@ static void sld_switch_buffers(void)
 static ssize_t sld_read(struct file *filp, char __user *buff,
 			size_t count, loff_t *offp)
 {
+	/* static int value = 0; */
+	/* unsigned int out = 0; */
+	/* value = !value; */
+	/* at91_set_gpio_output(AT91_PIN_PC9, value); */
+	/* at91_set_gpio_input(AT91_PIN_PB19, 1); */
+	/* out = at91_get_gpio_value(AT91_PIN_PB19); */
+	/* printk(KERN_INFO " === %d ", out); */
 	return ENOSYS; /*not implemented*/
 /*
   int ret = 0;
@@ -233,7 +243,7 @@ static void sld_hw_line(int line)
 	at91_set_gpio_value(PIN_RS, RS_INST);
 	at91_set_gpio_value(PIN_RW, RW_WRITE);
 
-	sld_hw_dbus(0x80 | line);
+	sld_hw_dbus_write(0x80 | line);
 	sld_hw_e();
 	delay_1ms();
 }
@@ -247,6 +257,7 @@ static int sld_hw_write_diff(unsigned char *buffer, size_t count,
 			     unsigned char *buffer_diff)
 {
 	int i;
+	/* int jump = 0; */
 	int k = 40;
 	at91_set_gpio_value(PIN_RW, RW_WRITE);
 	at91_set_gpio_value(PIN_RS, RS_DATA);
@@ -257,20 +268,22 @@ static int sld_hw_write_diff(unsigned char *buffer, size_t count,
 			sld_inc_addr(); is it worth ? yes, when cumulating
 			continue;
 		}
+		sld_hw_set_ac(jump);
+		jump = 0;
 		*/
-		sld_hw_dbus(buffer[i]);
+		sld_hw_dbus_write(buffer[i]);
 		sld_hw_e();
 		/* TODO */
 		k = 40;
-		while(k--)
-			delay_1us();
+		while(k--) {
+			/* sld_hw_busy(); */
+			delay_1us();			
+		}
 	}
-		
 	return 0;
 }
 
-
-static void sld_hw_dbus(unsigned char c)
+static void sld_hw_dbus_write(unsigned char c)
 {
 	int i;
 	for (i = 0; i < 8; i++) {
@@ -278,14 +291,40 @@ static void sld_hw_dbus(unsigned char c)
 		c >>= 1;
 	}
 }
-/* TODO
+#if 1
 static unsigned char sld_hw_dbus_read()
 {
 	int i;
+	unsigned char val;
+	unsigned char out = 0;
+	
 	for (i = 0; i < 8; i++) {
-		at91_set_gpio_value(dbus_to_pin[i], c&0x01);
-		c >>= 1;
-	}
+		at91_set_gpio_input(dbus_to_pin[i], 1);
+		delay_1us();
+		val = at91_get_gpio_value(dbus_to_pin[i]) ? 1 : 0;
+		out |= val << i;
+		at91_set_gpio_output(dbus_to_pin[i], 0);
+	}	
+	return out;
+}
+#endif
+
+static void sld_hw_set_add(int address)
+{
+	at91_set_gpio_value(PIN_RS, RS_INST);
+	at91_set_gpio_value(PIN_RW, RW_WRITE);
+	sld_hw_dbus_write(0x80 | address);
+	sld_hw_e();
+	delay_1ms();	
+}
+/* TODO + get hw_dbus
+static void sld_hw_set_ac(int address)
+{
+	at91_set_gpio_value(PIN_RS, RS_INST);
+	at91_set_gpio_value(PIN_RW, RW_WRITE);
+	sld_hw_dbus_write(0x80 | address);
+	sld_hw_e();
+	delay_5ms();	
 }
 */
 
@@ -317,7 +356,7 @@ static int sld_hw_init(void)
 	// sld_hw_clear()
 	// sld_hw_entry_mode()
 // function set	
-	sld_hw_dbus(0x38);
+	sld_hw_dbus_write(0x38);
 	sld_hw_e();
 	delay_5ms();
 	
@@ -327,17 +366,17 @@ static int sld_hw_init(void)
 	at91_set_gpio_value(PIN_D1, 1); // cursor 
 	at91_set_gpio_value(PIN_D0, 0); // blink  
 */	
-	sld_hw_dbus(0x0E);
+	sld_hw_dbus_write(0x0E);
 	sld_hw_e();
 	delay_5ms();
 
 // clear
-	sld_hw_dbus(0x01);
+	sld_hw_dbus_write(0x01);
 	sld_hw_e();
 	delay_5ms();
 	
 // entry mode
-	sld_hw_dbus(0x02);
+	sld_hw_dbus_write(0x02);
 	sld_hw_e();
 	delay_5ms();
 	
@@ -346,11 +385,13 @@ static int sld_hw_init(void)
 
 static void sld_hw_clear(void)
 {
+	int k = 40;
+	unsigned char c = 0;
 	at91_set_gpio_value(PIN_RS, RS_INST);
 	at91_set_gpio_value(PIN_RW, RW_WRITE);
-	sld_hw_dbus(0x01);
+	sld_hw_dbus_write(0x01);
 	sld_hw_e();
-	delay_1ms();
+
 	if (sld_hw_busy()) {
 		delay_1ms();
 	}
@@ -359,16 +400,17 @@ static void sld_hw_clear(void)
 static int sld_hw_busy(void)
 {
 	int val = 0;
-/*
-  TODO:
-  not sure how it goes...
+
 	at91_set_gpio_value(PIN_RS, RS_INST);
 	at91_set_gpio_value(PIN_RW, RW_READ);
-	at91_set_gpio_input(PIN_D7);
-	sld_hw_e();
-	val = at91_get_gpio_value(PIN_D7);
-	at91_set_gpio_output(PIN_D7, 0);
-*/	
+		
+	at91_set_gpio_value(PIN_E, 1);
+	delay_1us();
+	val = sld_hw_dbus_read();
+
+	at91_set_gpio_value(PIN_E, 0);
+	delay_1us();
+	
 	return val;
 }
 
@@ -379,7 +421,7 @@ static void sld_hw_display(int show)
 	at91_set_gpio_value(PIN_RS, RS_INST);
 	at91_set_gpio_value(PIN_RW, RW_WRITE);
 	
-	sld_hw_dbus(show?0x08 | 0x40: 0x0);
+	sld_hw_dbus_write(show?0x08 | 0x40: 0x0);
 	sld_hw_e();
 	delay_1ms();
 */	
@@ -465,13 +507,19 @@ static int __init sld_init(void)
 	
 /*
   	sld_hw_display(DISPLAY_OFF);
-*/	
+*/
+	at91_set_gpio_value(PIN_RS, RS_INST);
+	at91_set_gpio_value(PIN_RW, RW_WRITE);
+	sld_hw_dbus_write(0x14);
+	sld_hw_e();
+	delay_1ms();	
+	
+	sld_hw_set_add(0x06);
 	sld_hw_write(" Basiu kochana!#", 16);
 /*	
 	sld_hw_display(DISPLAY_ON);
 */
-	sld_led(LED_ON);	
-
+	sld_led(LED_ON);
 	return 0;
 }
 
