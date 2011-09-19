@@ -132,7 +132,7 @@ static ssize_t sld_write(struct file *filp, const char __user *buff,
 		goto out;
 	}
 
-	if (count > len) {
+	if (count > len) { // ||*offt + len > BUFFER_SIZE
 		ret = ENOBUFS;
 		goto out;
 	} else {
@@ -244,7 +244,6 @@ static void sld_hw_line(int line)
 	at91_set_gpio_value(PIN_RW, RW_WRITE);
 
 	sld_hw_dbus_write(0x80 | line);
-	sld_hw_e();
 	delay_1ms();
 }
 
@@ -272,8 +271,6 @@ static int sld_hw_write_diff(unsigned char *buffer, size_t count,
 		jump = 0;
 		*/
 		sld_hw_dbus_write(buffer[i]);
-		sld_hw_e();
-		/* TODO */
 		k = 40;
 		while(k--) {
 			/* sld_hw_busy(); */
@@ -290,32 +287,42 @@ static void sld_hw_dbus_write(unsigned char c)
 		at91_set_gpio_value(dbus_to_pin[i], c&0x01);
 		c >>= 1;
 	}
+	sld_hw_e();
+
 }
-#if 1
+
 static unsigned char sld_hw_dbus_read()
 {
 	int i;
 	unsigned char val;
 	unsigned char out = 0;
-	
+
 	for (i = 0; i < 8; i++) {
-		at91_set_gpio_input(dbus_to_pin[i], 1);
-		delay_1us();
+		at91_set_gpio_input(dbus_to_pin[i], 0);
+	}
+	
+	delay_1us();
+	at91_set_gpio_value(PIN_E, 1);
+	delay_1us();
+
+	for (i = 0; i < 8; i++) {
 		val = at91_get_gpio_value(dbus_to_pin[i]) ? 1 : 0;
 		out |= val << i;
 		at91_set_gpio_output(dbus_to_pin[i], 0);
-	}	
+	}
+
+	at91_set_gpio_value(PIN_E, 0);
+	delay_1us();
+
 	return out;
 }
-#endif
 
 static void sld_hw_set_add(int address)
 {
 	at91_set_gpio_value(PIN_RS, RS_INST);
 	at91_set_gpio_value(PIN_RW, RW_WRITE);
 	sld_hw_dbus_write(0x80 | address);
-	sld_hw_e();
-	delay_1ms();	
+	delay_1ms();
 }
 /* TODO + get hw_dbus
 static void sld_hw_set_ac(int address)
@@ -323,8 +330,7 @@ static void sld_hw_set_ac(int address)
 	at91_set_gpio_value(PIN_RS, RS_INST);
 	at91_set_gpio_value(PIN_RW, RW_WRITE);
 	sld_hw_dbus_write(0x80 | address);
-	sld_hw_e();
-	delay_5ms();	
+	delay_5ms();
 }
 */
 
@@ -357,28 +363,23 @@ static int sld_hw_init(void)
 	// sld_hw_entry_mode()
 // function set	
 	sld_hw_dbus_write(0x38);
-	sld_hw_e();
-	delay_5ms();
-	
+	delay_1ms();
 // coursor
 /*
 	at91_set_gpio_value(PIN_D2, 1); // display
 	at91_set_gpio_value(PIN_D1, 1); // cursor 
 	at91_set_gpio_value(PIN_D0, 0); // blink  
 */	
-	sld_hw_dbus_write(0x0E);
-	sld_hw_e();
-	delay_5ms();
+	sld_hw_dbus_write(0x0C);
+	delay_1ms();
 
 // clear
 	sld_hw_dbus_write(0x01);
-	sld_hw_e();
-	delay_5ms();
+	delay_1ms();
 	
 // entry mode
 	sld_hw_dbus_write(0x02);
-	sld_hw_e();
-	delay_5ms();
+	delay_1ms();
 	
 	return 0;
 }
@@ -390,7 +391,6 @@ static void sld_hw_clear(void)
 	at91_set_gpio_value(PIN_RS, RS_INST);
 	at91_set_gpio_value(PIN_RW, RW_WRITE);
 	sld_hw_dbus_write(0x01);
-	sld_hw_e();
 
 	if (sld_hw_busy()) {
 		delay_1ms();
@@ -403,28 +403,26 @@ static int sld_hw_busy(void)
 
 	at91_set_gpio_value(PIN_RS, RS_INST);
 	at91_set_gpio_value(PIN_RW, RW_READ);
-		
-	at91_set_gpio_value(PIN_E, 1);
-	delay_1us();
+
 	val = sld_hw_dbus_read();
 
-	at91_set_gpio_value(PIN_E, 0);
-	delay_1us();
-	
-	return val;
+	return val & PIN_D7;
 }
 
 static void sld_hw_display(int show)
 {
-/*	
 	int status = 0;
-	at91_set_gpio_value(PIN_RS, RS_INST);
-	at91_set_gpio_value(PIN_RW, RW_WRITE);
+	unsigned char bus = 0;
+	/* at91_set_gpio_value(PIN_RS, RS_INST); */
+	/* at91_set_gpio_value(PIN_RW, RW_WRITE); */
+
+	at91_set_gpio_value(PIN_RS, RS_DATA);
+	at91_set_gpio_value(PIN_RW, RW_READ);
+
+	bus = sld_hw_dbus_read();
 	
 	sld_hw_dbus_write(show?0x08 | 0x40: 0x0);
-	sld_hw_e();
 	delay_1ms();
-*/	
 }
 
 static void sld_led(int status)
@@ -479,8 +477,7 @@ static int __init sld_init(void)
 	cdev_add(sld_cdev, sld_dev, 1);
 	
 	sld_class = class_create(THIS_MODULE, SLD);
-	sld_device = device_create(sld_class, NULL,
-				       sld_dev, "%s", SLD);
+	sld_device = device_create(sld_class, NULL, sld_dev, "%s", SLD);
 
 	sema_init(&sld_semaphore, 1);
 /*
@@ -511,11 +508,19 @@ static int __init sld_init(void)
 	at91_set_gpio_value(PIN_RS, RS_INST);
 	at91_set_gpio_value(PIN_RW, RW_WRITE);
 	sld_hw_dbus_write(0x14);
-	sld_hw_e();
 	delay_1ms();	
 	
 	sld_hw_set_add(0x06);
-	sld_hw_write(" Basiu kochana!#", 16);
+	sld_hw_write("To jest tekst!#", 16);
+	sld_hw_set_add(0x00);
+	sld_hw_write("To jest tekst!#", 5);
+
+	/* sld_hw_set_add(0x07); */
+	/* sld_hw_display(1); */
+	/* sld_hw_set_add(0x08); */
+	/* sld_hw_display(1); */
+
+
 /*	
 	sld_hw_display(DISPLAY_ON);
 */
