@@ -134,7 +134,6 @@ static ssize_t sld_write(struct file *filp, const char __user *buff,
 
 	if (count > len) { // ||*offt + len > BUFFER_SIZE
 		ret = ENOBUFS;
-		goto out;
 	} else {
 		*offp += count;
 		ret = count;
@@ -158,7 +157,7 @@ static void sld_do_write(void)
 	sld_hw_write(sld_buffer + 16, 16);
 #else
 	sld_hw_clear();
-	//delay_5ms();
+	delay_1ms();
 	sld_hw_line(LINE_0);
 	sld_hw_write_diff(sld_buffer, 16, sld_buffer_back);
 	sld_hw_line(LINE_1);
@@ -298,7 +297,7 @@ static unsigned char sld_hw_dbus_read()
 	unsigned char out = 0;
 
 	for (i = 0; i < 8; i++) {
-		gpio_set_input(dbus_to_pin[i], 0);
+		gpio_direction_input(dbus_to_pin[i]);
 	}
 	
 	delay_1us();
@@ -308,7 +307,7 @@ static unsigned char sld_hw_dbus_read()
 	for (i = 0; i < 8; i++) {
 		val = gpio_get_value(dbus_to_pin[i]) ? 1 : 0;
 		out |= val << i;
-		gpio_set_output(dbus_to_pin[i], 0);
+		gpio_direction_output(dbus_to_pin[i], 0);
 	}
 
 	gpio_set_value(PIN_E, 0);
@@ -344,18 +343,18 @@ static void sld_hw_e(void)
 
 static int sld_hw_init(void)
 {
-	gpio_set_output(PIN_RS, RS_INST);
-	gpio_set_output(PIN_RW, RW_WRITE);
-	gpio_set_output(PIN_E, 0);
+	gpio_direction_output(PIN_RS, RS_INST);
+	gpio_direction_output(PIN_RW, RW_WRITE);
+	gpio_direction_output(PIN_E, 0);
 
-	gpio_set_output(PIN_D7, 0);
-	gpio_set_output(PIN_D6, 0);
-	gpio_set_output(PIN_D5, 0);
-	gpio_set_output(PIN_D4, 0);
-	gpio_set_output(PIN_D3, 0);
-	gpio_set_output(PIN_D2, 0);//5x7
-	gpio_set_output(PIN_D1, 0);
-	gpio_set_output(PIN_D0, 0);
+	gpio_direction_output(PIN_D7, 0);
+	gpio_direction_output(PIN_D6, 0);
+	gpio_direction_output(PIN_D5, 0);
+	gpio_direction_output(PIN_D4, 0);
+	gpio_direction_output(PIN_D3, 0);
+	gpio_direction_output(PIN_D2, 0);//5x7
+	gpio_direction_output(PIN_D1, 0);
+	gpio_direction_output(PIN_D0, 0);
 
 	// sld_hw_function_set()
 	// sld_hw_cursor()
