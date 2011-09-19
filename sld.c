@@ -187,9 +187,9 @@ static ssize_t sld_read(struct file *filp, char __user *buff,
 	/* static int value = 0; */
 	/* unsigned int out = 0; */
 	/* value = !value; */
-	/* at91_set_gpio_output(AT91_PIN_PC9, value); */
-	/* at91_set_gpio_input(AT91_PIN_PB19, 1); */
-	/* out = at91_get_gpio_value(AT91_PIN_PB19); */
+	/* gpio_set_output(AT91_PIN_PC9, value); */
+	/* gpio_set_input(AT91_PIN_PB19, 1); */
+	/* out = gpio_get_value(AT91_PIN_PB19); */
 	/* printk(KERN_INFO " === %d ", out); */
 	return ENOSYS; /*not implemented*/
 /*
@@ -240,8 +240,8 @@ static loff_t sld_llseek(struct file *filp, loff_t off, int whence)
 
 static void sld_hw_line(int line)
 {
-	at91_set_gpio_value(PIN_RS, RS_INST);
-	at91_set_gpio_value(PIN_RW, RW_WRITE);
+	gpio_set_value(PIN_RS, RS_INST);
+	gpio_set_value(PIN_RW, RW_WRITE);
 
 	sld_hw_dbus_write(0x80 | line);
 	delay_1ms();
@@ -258,8 +258,8 @@ static int sld_hw_write_diff(unsigned char *buffer, size_t count,
 	int i;
 	/* int jump = 0; */
 	int k = 40;
-	at91_set_gpio_value(PIN_RW, RW_WRITE);
-	at91_set_gpio_value(PIN_RS, RS_DATA);
+	gpio_set_value(PIN_RW, RW_WRITE);
+	gpio_set_value(PIN_RS, RS_DATA);
 	delay_1us();
 	for (i = 0; i < count; i++) {
 		/* TODO
@@ -284,7 +284,7 @@ static void sld_hw_dbus_write(unsigned char c)
 {
 	int i;
 	for (i = 0; i < 8; i++) {
-		at91_set_gpio_value(dbus_to_pin[i], c&0x01);
+		gpio_set_value(dbus_to_pin[i], c&0x01);
 		c >>= 1;
 	}
 	sld_hw_e();
@@ -298,20 +298,20 @@ static unsigned char sld_hw_dbus_read()
 	unsigned char out = 0;
 
 	for (i = 0; i < 8; i++) {
-		at91_set_gpio_input(dbus_to_pin[i], 0);
+		gpio_set_input(dbus_to_pin[i], 0);
 	}
 	
 	delay_1us();
-	at91_set_gpio_value(PIN_E, 1);
+	gpio_set_value(PIN_E, 1);
 	delay_1us();
 
 	for (i = 0; i < 8; i++) {
-		val = at91_get_gpio_value(dbus_to_pin[i]) ? 1 : 0;
+		val = gpio_get_value(dbus_to_pin[i]) ? 1 : 0;
 		out |= val << i;
-		at91_set_gpio_output(dbus_to_pin[i], 0);
+		gpio_set_output(dbus_to_pin[i], 0);
 	}
 
-	at91_set_gpio_value(PIN_E, 0);
+	gpio_set_value(PIN_E, 0);
 	delay_1us();
 
 	return out;
@@ -319,16 +319,16 @@ static unsigned char sld_hw_dbus_read()
 
 static void sld_hw_set_add(int address)
 {
-	at91_set_gpio_value(PIN_RS, RS_INST);
-	at91_set_gpio_value(PIN_RW, RW_WRITE);
+	gpio_set_value(PIN_RS, RS_INST);
+	gpio_set_value(PIN_RW, RW_WRITE);
 	sld_hw_dbus_write(0x80 | address);
 	delay_1ms();
 }
 /* TODO + get hw_dbus
 static void sld_hw_set_ac(int address)
 {
-	at91_set_gpio_value(PIN_RS, RS_INST);
-	at91_set_gpio_value(PIN_RW, RW_WRITE);
+	gpio_set_value(PIN_RS, RS_INST);
+	gpio_set_value(PIN_RW, RW_WRITE);
 	sld_hw_dbus_write(0x80 | address);
 	delay_5ms();
 }
@@ -336,26 +336,26 @@ static void sld_hw_set_ac(int address)
 
 static void sld_hw_e(void)
 {
-	at91_set_gpio_value(PIN_E, 1);
+	gpio_set_value(PIN_E, 1);
 	delay_1us();
-	at91_set_gpio_value(PIN_E, 0);
+	gpio_set_value(PIN_E, 0);
 	delay_1us();
 }
 
 static int sld_hw_init(void)
 {
-	at91_set_gpio_output(PIN_RS, RS_INST);
-	at91_set_gpio_output(PIN_RW, RW_WRITE);
-	at91_set_gpio_output(PIN_E, 0);
+	gpio_set_output(PIN_RS, RS_INST);
+	gpio_set_output(PIN_RW, RW_WRITE);
+	gpio_set_output(PIN_E, 0);
 
-	at91_set_gpio_output(PIN_D7, 0);
-	at91_set_gpio_output(PIN_D6, 0);
-	at91_set_gpio_output(PIN_D5, 0);
-	at91_set_gpio_output(PIN_D4, 0);
-	at91_set_gpio_output(PIN_D3, 0);
-	at91_set_gpio_output(PIN_D2, 0);//5x7
-	at91_set_gpio_output(PIN_D1, 0);
-	at91_set_gpio_output(PIN_D0, 0);
+	gpio_set_output(PIN_D7, 0);
+	gpio_set_output(PIN_D6, 0);
+	gpio_set_output(PIN_D5, 0);
+	gpio_set_output(PIN_D4, 0);
+	gpio_set_output(PIN_D3, 0);
+	gpio_set_output(PIN_D2, 0);//5x7
+	gpio_set_output(PIN_D1, 0);
+	gpio_set_output(PIN_D0, 0);
 
 	// sld_hw_function_set()
 	// sld_hw_cursor()
@@ -366,9 +366,9 @@ static int sld_hw_init(void)
 	delay_1ms();
 // coursor
 /*
-	at91_set_gpio_value(PIN_D2, 1); // display
-	at91_set_gpio_value(PIN_D1, 1); // cursor 
-	at91_set_gpio_value(PIN_D0, 0); // blink  
+	gpio_set_value(PIN_D2, 1); // display
+	gpio_set_value(PIN_D1, 1); // cursor 
+	gpio_set_value(PIN_D0, 0); // blink  
 */	
 	sld_hw_dbus_write(0x0C);
 	delay_1ms();
@@ -388,8 +388,8 @@ static void sld_hw_clear(void)
 {
 	int k = 40;
 	unsigned char c = 0;
-	at91_set_gpio_value(PIN_RS, RS_INST);
-	at91_set_gpio_value(PIN_RW, RW_WRITE);
+	gpio_set_value(PIN_RS, RS_INST);
+	gpio_set_value(PIN_RW, RW_WRITE);
 	sld_hw_dbus_write(0x01);
 
 	if (sld_hw_busy()) {
@@ -401,8 +401,8 @@ static int sld_hw_busy(void)
 {
 	int val = 0;
 
-	at91_set_gpio_value(PIN_RS, RS_INST);
-	at91_set_gpio_value(PIN_RW, RW_READ);
+	gpio_set_value(PIN_RS, RS_INST);
+	gpio_set_value(PIN_RW, RW_READ);
 
 	val = sld_hw_dbus_read();
 
@@ -413,11 +413,11 @@ static void sld_hw_display(int show)
 {
 	int status = 0;
 	unsigned char bus = 0;
-	/* at91_set_gpio_value(PIN_RS, RS_INST); */
-	/* at91_set_gpio_value(PIN_RW, RW_WRITE); */
+	/* gpio_set_value(PIN_RS, RS_INST); */
+	/* gpio_set_value(PIN_RW, RW_WRITE); */
 
-	at91_set_gpio_value(PIN_RS, RS_DATA);
-	at91_set_gpio_value(PIN_RW, RW_READ);
+	gpio_set_value(PIN_RS, RS_DATA);
+	gpio_set_value(PIN_RW, RW_READ);
 
 	bus = sld_hw_dbus_read();
 	
@@ -427,8 +427,8 @@ static void sld_hw_display(int show)
 
 static void sld_led(int status)
 {
-	at91_set_gpio_value(AT91_PIN_PB19, 0);
-	at91_set_gpio_value(AT91_PIN_PC9, status);
+	gpio_set_value(AT91_PIN_PB19, 0);
+	gpio_set_value(AT91_PIN_PC9, status);
 }
 
 static void delay_1us(void)
@@ -505,8 +505,8 @@ static int __init sld_init(void)
 /*
   	sld_hw_display(DISPLAY_OFF);
 */
-	at91_set_gpio_value(PIN_RS, RS_INST);
-	at91_set_gpio_value(PIN_RW, RW_WRITE);
+	gpio_set_value(PIN_RS, RS_INST);
+	gpio_set_value(PIN_RW, RW_WRITE);
 	sld_hw_dbus_write(0x14);
 	delay_1ms();	
 	
