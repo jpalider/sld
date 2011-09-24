@@ -57,12 +57,12 @@ static int sld_hw_write_diff(unsigned char *buffer, size_t count,
 static int sld_hw_init(void);
 static void sld_hw_dbus_write(unsigned char c);
 static unsigned char sld_hw_dbus_read(void);
-static void sld_hw_set_ac(int address);
+static void sld_hw_set_addr(int address);
 static void sld_hw_e(void);
 static void sld_hw_line(int);
 static void sld_hw_clear(void);
 static int sld_hw_busy(void);
-static void sld_hw_display(int);
+static void sld_hw_show_display(int);
 
 static void sld_led(int);
 
@@ -75,7 +75,6 @@ static void sld_wq_write(struct work_struct*);
 static void sld_switch_buffers(void);
 
 static const size_t BUFFER_SIZE = LINES * CHARS_PER_LINE;
-//#define BUFFER_SIZE LINES * CHARS_PER_LINE
 static char sld_buffer_1[LINES * CHARS_PER_LINE];
 static char sld_buffer_2[LINES * CHARS_PER_LINE];
 static char *sld_buffer = sld_buffer_1;
@@ -132,14 +131,13 @@ static ssize_t sld_write(struct file *filp, const char __user *buff,
 		goto out;
 	}
 
-	if (count > len) { // ||*offt + len > BUFFER_SIZE
+	if (count > len) {  /* ||*offt + len > BUFFER_SIZE */
 		ret = ENOBUFS;
 	} else {
 		*offp += count;
 		ret = count;
 	}
 	queue_work(sld_workqueue, &sld_work_write);
-	/* printk(KERN_INFO "sld_buffer = %s\n",  sld_buffer);	 */
 out:
 	up(&sld_semaphore);
 
@@ -157,11 +155,10 @@ static void sld_do_write(void)
 	sld_hw_write(sld_buffer + 16, 16);
 #else
 	sld_hw_clear();
-	delay_1ms();
 	sld_hw_line(LINE_0);
-	sld_hw_write_diff(sld_buffer, 16, sld_buffer_back);
+	sld_hw_write_diff(sld_buffer, CHARS_PER_LINE, sld_buffer_back);
 	sld_hw_line(LINE_1);
-	sld_hw_write_diff(sld_buffer + 16, 16, sld_buffer_back);
+	sld_hw_write_diff(sld_buffer + CHARS_PER_LINE, CHARS_PER_LINE, sld_buffer_back);
 
 #endif
 }
@@ -183,13 +180,6 @@ static void sld_switch_buffers(void)
 static ssize_t sld_read(struct file *filp, char __user *buff,
 			size_t count, loff_t *offp)
 {
-	/* static int value = 0; */
-	/* unsigned int out = 0; */
-	/* value = !value; */
-	/* gpio_set_output(AT91_PIN_PC9, value); */
-	/* gpio_set_input(AT91_PIN_PB19, 1); */
-	/* out = gpio_get_value(AT91_PIN_PB19); */
-	/* printk(KERN_INFO " === %d ", out); */
 	return ENOSYS; /*not implemented*/
 /*
   int ret = 0;
@@ -255,25 +245,24 @@ static int sld_hw_write_diff(unsigned char *buffer, size_t count,
 			     unsigned char *buffer_diff)
 {
 	int i;
-	/* int jump = 0; */
+	int jump = 0;
 	int k = 40;
 	gpio_set_value(PIN_RW, RW_WRITE);
 	gpio_set_value(PIN_RS, RS_DATA);
 	delay_1us();
 	for (i = 0; i < count; i++) {
-		/* TODO
 		if (!(buffer[i]-buffer_diff[i])) {
-			sld_inc_addr(); is it worth ? yes, when cumulating
+			jump++;			
 			continue;
 		}
-		sld_hw_set_ac(jump);
+		sld_hw_set_addr(i+jump);
+		printk(KERN_ERR "jumped: %d\n", jump);
 		jump = 0;
-		*/
 		sld_hw_dbus_write(buffer[i]);
 		k = 40;
 		while(k--) {
 			/* sld_hw_busy(); */
-			delay_1us();			
+			delay_1us();
 		}
 	}
 	return 0;
@@ -316,22 +305,13 @@ static unsigned char sld_hw_dbus_read()
 	return out;
 }
 
-static void sld_hw_set_add(int address)
+static void sld_hw_set_addr(int address)
 {
 	gpio_set_value(PIN_RS, RS_INST);
 	gpio_set_value(PIN_RW, RW_WRITE);
 	sld_hw_dbus_write(0x80 | address);
 	delay_1ms();
 }
-/* TODO + get hw_dbus
-static void sld_hw_set_ac(int address)
-{
-	gpio_set_value(PIN_RS, RS_INST);
-	gpio_set_value(PIN_RW, RW_WRITE);
-	sld_hw_dbus_write(0x80 | address);
-	delay_5ms();
-}
-*/
 
 static void sld_hw_e(void)
 {
@@ -352,31 +332,30 @@ static int sld_hw_init(void)
 	gpio_direction_output(PIN_D5, 0);
 	gpio_direction_output(PIN_D4, 0);
 	gpio_direction_output(PIN_D3, 0);
-	gpio_direction_output(PIN_D2, 0);//5x7
+	gpio_direction_output(PIN_D2, 0); /* 5x7 */
 	gpio_direction_output(PIN_D1, 0);
 	gpio_direction_output(PIN_D0, 0);
 
-	// sld_hw_function_set()
-	// sld_hw_cursor()
-	// sld_hw_clear()
-	// sld_hw_entry_mode()
-// function set	
+	/* sld_hw_function_set() */
+	/* sld_hw_cursor() */
+	/* sld_hw_clear() */
+	/* sld_hw_entry_mode() */
+/* function set	 */
 	sld_hw_dbus_write(0x38);
 	delay_1ms();
-// coursor
-/*
-	gpio_set_value(PIN_D2, 1); // display
-	gpio_set_value(PIN_D1, 1); // cursor 
-	gpio_set_value(PIN_D0, 0); // blink  
-*/	
+	
+/* coursor */
+	gpio_set_value(PIN_D2, 1); /* display */
+	gpio_set_value(PIN_D1, 1); /* cursor */
+	gpio_set_value(PIN_D0, 0); /* blink */  	
 	sld_hw_dbus_write(0x0C);
 	delay_1ms();
 
-// clear
+/* clear */
 	sld_hw_dbus_write(0x01);
 	delay_1ms();
 	
-// entry mode
+/* entry mode */
 	sld_hw_dbus_write(0x02);
 	delay_1ms();
 	
@@ -408,20 +387,18 @@ static int sld_hw_busy(void)
 	return val & PIN_D7;
 }
 
-static void sld_hw_display(int show)
+static void sld_hw_show_display(int show)
 {
-	int status = 0;
-	unsigned char bus = 0;
-	/* gpio_set_value(PIN_RS, RS_INST); */
-	/* gpio_set_value(PIN_RW, RW_WRITE); */
+	/* int status = 0; */
+	/* unsigned char bus = 0; */
 
-	gpio_set_value(PIN_RS, RS_DATA);
-	gpio_set_value(PIN_RW, RW_READ);
+	/* gpio_set_value(PIN_RS, RS_DATA); */
+	/* gpio_set_value(PIN_RW, RW_READ); */
 
-	bus = sld_hw_dbus_read();
+	/* bus = sld_hw_dbus_read(); */
 	
-	sld_hw_dbus_write(show?0x08 | 0x40: 0x0);
-	delay_1ms();
+	/* sld_hw_dbus_write(show?0x08 | 0x40: 0x0); */
+	/* delay_1ms(); */
 }
 
 static void sld_led(int status)
@@ -450,26 +427,29 @@ static int __init sld_init(void)
 	printk(KERN_INFO "Loading "DEVICE_NAME".\n");
 
 #if STATIC_MAJOR
-	//statically for major = 244, minor = 1
+	/* statically for major = 244, minor = 1 */
 	sld_dev = MKDEV(STATIC_MAJOR, 0);
-	register_chrdev_region(sld_dev, 1, SLD);
+	res = register_chrdev_region(sld_dev, 1, SLD);
 	if (res < 0) {
 		printk(KERN_ERR "Failed on: register_chrdev_region()\n");
-	} else {
-		printk(KERN_INFO "Device allocated with major = %d\n",
-			   MAJOR(sld_dev));
-	}
-#else
-	sld_major = alloc_chrdev_region(&sld_dev, SLD_FIRST_MINOR,
-					    SLD_COUNT, SLD);
-	if (res < 0) {
-		printk(KERN_ERR "Failed on: alloc_chrdev_region()\n");
+		return -1;
 	} else {
 		printk(KERN_INFO "Device allocated with major = %d\n",
 		       MAJOR(sld_dev));
 	}
-#endif	
 	sld_major = MAJOR(sld_dev);
+#else
+	sld_major = alloc_chrdev_region(&sld_dev, SLD_FIRST_MINOR,
+					SLD_COUNT, SLD);
+	if (sld_major < 0) {
+		printk(KERN_ERR "Failed on: alloc_chrdev_region()\n");
+		return -1;
+	} else {
+		printk(KERN_INFO "Device allocated with major = %d\n",
+		       MAJOR(sld_dev));
+	}
+#endif
+	
 	sld_cdev = cdev_alloc();
 	sld_cdev->owner = THIS_MODULE;
 	sld_cdev->ops = &sld_fops;
@@ -500,28 +480,20 @@ static int __init sld_init(void)
 	sld_workqueue = create_singlethread_workqueue(SLD_WORKQUEUE);
 	sld_hw_init();
 	sld_hw_line(LINE_1);
-	
-/*
-  	sld_hw_display(DISPLAY_OFF);
-*/
+
 	gpio_set_value(PIN_RS, RS_INST);
 	gpio_set_value(PIN_RW, RW_WRITE);
 	sld_hw_dbus_write(0x14);
 	delay_1ms();	
 	
-	sld_hw_set_add(0x06);
+	sld_hw_set_addr(0x06);
 	sld_hw_write("To jest tekst!#", 16);
-	sld_hw_set_add(0x00);
+	sld_hw_set_addr(0x00);
 	sld_hw_write("To jest tekst!#", 5);
-
-	/* sld_hw_set_add(0x07); */
-	/* sld_hw_display(1); */
-	/* sld_hw_set_add(0x08); */
-	/* sld_hw_display(1); */
-
 
 /*	
 	sld_hw_display(DISPLAY_ON);
+	sld_hw_display(DISPLAY_OFF);
 */
 	sld_led(LED_ON);
 	return 0;
