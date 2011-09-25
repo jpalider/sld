@@ -55,7 +55,8 @@ static int sld_hw_write(unsigned char *buffer, size_t count);
 static int sld_hw_write_diff(unsigned char *buffer, size_t count,
 			     unsigned char *buffer_diff);
 static int sld_hw_init(void);
-static void sld_hw_dbus_write(unsigned char c);
+static void sld_hw_dbus_set(unsigned char c);
+static void sld_hw_dbus_write(unsigned char c, unsigned int reg);
 static unsigned char sld_hw_dbus_read(void);
 static void sld_hw_set_addr(int address);
 static void sld_hw_e(void);
@@ -155,10 +156,10 @@ static void sld_do_write(void)
 	sld_hw_write(sld_buffer + 16, 16);
 #else
 	sld_hw_clear();
-	sld_hw_line(LINE_0);
-	sld_hw_write_diff(sld_buffer, CHARS_PER_LINE, sld_buffer_back);
-	sld_hw_line(LINE_1);
-	sld_hw_write_diff(sld_buffer + CHARS_PER_LINE, CHARS_PER_LINE, sld_buffer_back);
+// 	sld_hw_line(LINE_0);
+	sld_hw_write_diff(sld_buffer, CHARS_PER_LINE*2, sld_buffer_back);
+	/* sld_hw_line(LINE_1); */
+	/* sld_hw_write_diff(sld_buffer, BUFFER_SIZE, sld_buffer_back); */
 
 #endif
 }
@@ -166,7 +167,7 @@ static void sld_do_write(void)
 static void sld_wq_write(struct work_struct *work)
 {
 	sld_do_write();
-	sld_switch_buffers();
+//	sld_switch_buffers();
 }
 
 static void sld_switch_buffers(void)
@@ -229,10 +230,8 @@ static loff_t sld_llseek(struct file *filp, loff_t off, int whence)
 
 static void sld_hw_line(int line)
 {
-	gpio_set_value(PIN_RS, RS_INST);
-	gpio_set_value(PIN_RW, RW_WRITE);
-
-	sld_hw_dbus_write(0x80 | line);
+	sld_hw_dbus_write(0x80 | line, RS_INST);
+	delay_1ms();	
 	delay_1ms();
 }
 
@@ -247,34 +246,51 @@ static int sld_hw_write_diff(unsigned char *buffer, size_t count,
 	int i;
 	int jump = 0;
 	int k = 40;
-	gpio_set_value(PIN_RW, RW_WRITE);
-	gpio_set_value(PIN_RS, RS_DATA);
-	delay_1us();
 	for (i = 0; i < count; i++) {
-		if (!(buffer[i]-buffer_diff[i])) {
-			jump++;			
-			continue;
+		printk("%c\t", buffer[i]);
+
+		if ( i == CHARS_PER_LINE) {
+			/* works for 2 lines only: TODO */
+			printk("switch to line 1\n");
+			sld_hw_line(LINE_1);
 		}
-		sld_hw_set_addr(i+jump);
-		printk(KERN_ERR "jumped: %d\n", jump);
-		jump = 0;
-		sld_hw_dbus_write(buffer[i]);
-		k = 40;
+		
+		/* if (!(buffer[i]-buffer_diff[i])) { */
+		/* 	jump++; */
+		/* 	printk(KERN_ERR "jumping"); */
+		/* 	continue; */
+		/* } */
+		/* sld_hw_set_addr(i+jump); */
+		/* printk(KERN_ERR "jumped: %d\n", jump); */
+		/* jump = 0; */
+		sld_hw_dbus_write(buffer[i], RS_DATA);
+		k = 50;
 		while(k--) {
-			/* sld_hw_busy(); */
+			/* if ( sld_hw_busy() ) */
+			/* 	delay_1us(); */
+			/* else */
+			/* 	break; */
 			delay_1us();
 		}
 	}
 	return 0;
 }
 
-static void sld_hw_dbus_write(unsigned char c)
-{
+static void sld_hw_dbus_set(unsigned char c)
+{	
 	int i;
 	for (i = 0; i < 8; i++) {
 		gpio_set_value(dbus_to_pin[i], c&0x01);
 		c >>= 1;
 	}
+}
+
+static void sld_hw_dbus_write(unsigned char c, unsigned int reg)
+{
+	gpio_set_value(PIN_RW, RW_WRITE);
+	gpio_set_value(PIN_RS, reg);
+	delay_1us();
+	sld_hw_dbus_set(c);
 	sld_hw_e();
 
 }
@@ -307,9 +323,8 @@ static unsigned char sld_hw_dbus_read()
 
 static void sld_hw_set_addr(int address)
 {
-	gpio_set_value(PIN_RS, RS_INST);
-	gpio_set_value(PIN_RW, RW_WRITE);
-	sld_hw_dbus_write(0x80 | address);
+	sld_hw_dbus_write(0x80 | address, RS_INST);
+	delay_1ms();
 	delay_1ms();
 }
 
@@ -341,22 +356,22 @@ static int sld_hw_init(void)
 	/* sld_hw_clear() */
 	/* sld_hw_entry_mode() */
 /* function set	 */
-	sld_hw_dbus_write(0x38);
+	sld_hw_dbus_write(0x38, RS_INST);
 	delay_1ms();
 	
 /* coursor */
 	gpio_set_value(PIN_D2, 1); /* display */
 	gpio_set_value(PIN_D1, 1); /* cursor */
 	gpio_set_value(PIN_D0, 0); /* blink */  	
-	sld_hw_dbus_write(0x0C);
+	sld_hw_dbus_write(0x0C, RS_INST);
 	delay_1ms();
 
 /* clear */
-	sld_hw_dbus_write(0x01);
+	sld_hw_dbus_write(0x01, RS_INST);
 	delay_1ms();
 	
 /* entry mode */
-	sld_hw_dbus_write(0x02);
+	sld_hw_dbus_write(0x02, RS_INST);
 	delay_1ms();
 	
 	return 0;
@@ -364,15 +379,13 @@ static int sld_hw_init(void)
 
 static void sld_hw_clear(void)
 {
-	int k = 40;
-	unsigned char c = 0;
-	gpio_set_value(PIN_RS, RS_INST);
-	gpio_set_value(PIN_RW, RW_WRITE);
-	sld_hw_dbus_write(0x01);
+	sld_hw_dbus_write(0x01, RS_INST);
 
-	if (sld_hw_busy()) {
-		delay_1ms();
-	}
+	/* if (sld_hw_busy()) { */
+	/* 	delay_1ms(); */
+	/* }	 */
+	delay_1ms();
+
 }
 
 static int sld_hw_busy(void)
@@ -397,7 +410,7 @@ static void sld_hw_show_display(int show)
 
 	/* bus = sld_hw_dbus_read(); */
 	
-	/* sld_hw_dbus_write(show?0x08 | 0x40: 0x0); */
+	/* sld_hw_dbus_write(show?0x08 | 0x40: 0x0, RS_INST); */
 	/* delay_1ms(); */
 }
 
@@ -423,10 +436,9 @@ static void delay_5ms(void)
 
 static int __init sld_init(void)
 {
-	int res = 0;
-	printk(KERN_INFO "Loading "DEVICE_NAME".\n");
 
 #if STATIC_MAJOR
+	int res;
 	/* statically for major = 244, minor = 1 */
 	sld_dev = MKDEV(STATIC_MAJOR, 0);
 	res = register_chrdev_region(sld_dev, 1, SLD);
@@ -449,7 +461,9 @@ static int __init sld_init(void)
 		       MAJOR(sld_dev));
 	}
 #endif
-	
+
+	printk(KERN_INFO "Loading "DEVICE_NAME".\n");
+
 	sld_cdev = cdev_alloc();
 	sld_cdev->owner = THIS_MODULE;
 	sld_cdev->ops = &sld_fops;
@@ -479,17 +493,16 @@ static int __init sld_init(void)
 */
 	sld_workqueue = create_singlethread_workqueue(SLD_WORKQUEUE);
 	sld_hw_init();
-	sld_hw_line(LINE_1);
 
-	gpio_set_value(PIN_RS, RS_INST);
-	gpio_set_value(PIN_RW, RW_WRITE);
-	sld_hw_dbus_write(0x14);
-	delay_1ms();	
+	/* gpio_set_value(PIN_RS, RS_INST); */
+	/* gpio_set_value(PIN_RW, RW_WRITE); */
+	/* sld_hw_dbus_write(0x14, RS_INST); */
+	/* delay_1ms();	 */
 	
 	sld_hw_set_addr(0x06);
-	sld_hw_write("To jest tekst!#", 16);
-	sld_hw_set_addr(0x00);
 	sld_hw_write("To jest tekst!#", 5);
+	sld_hw_set_addr(0x00);
+	sld_hw_write("To jest tekst!#", 16);
 
 /*	
 	sld_hw_display(DISPLAY_ON);
