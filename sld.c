@@ -133,6 +133,7 @@ static ssize_t sld_write(struct file *filp, const char __user *buff,
 	}
 
 	if (count > len) {  /* ||*offt + len > BUFFER_SIZE */
+		*offp += len;
 		ret = ENOBUFS;
 	} else {
 		*offp += count;
