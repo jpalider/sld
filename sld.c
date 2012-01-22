@@ -18,17 +18,17 @@
 #define LINES 2
 #define CHARS_PER_LINE 16
 
-#define PIN_RS		AT91_PIN_PB3
-#define PIN_RW		AT91_PIN_PB1
-#define PIN_E		AT91_PIN_PA6
-#define PIN_D0		AT91_PIN_PA9
-#define PIN_D1		AT91_PIN_PA31
-#define PIN_D2		AT91_PIN_PB11
-#define PIN_D3		AT91_PIN_PB13
-#define PIN_D4		AT91_PIN_PB21
-#define PIN_D5		AT91_PIN_PB31
-#define PIN_D6		AT91_PIN_PC1
-#define PIN_D7		AT91_PIN_PC3
+#define PIN_RS		AT91_PIN_PC11
+#define PIN_RW		AT91_PIN_PC9
+#define PIN_E		AT91_PIN_PC8
+#define PIN_D0		AT91_PIN_PB18
+#define PIN_D1		AT91_PIN_PB19
+#define PIN_D2		AT91_PIN_PB17
+#define PIN_D3		AT91_PIN_PB16
+#define PIN_D4		AT91_PIN_PB9
+#define PIN_D5		AT91_PIN_PB8
+#define PIN_D6		AT91_PIN_PB2
+#define PIN_D7		AT91_PIN_PB3
 
 #define RS_INST		0
 #define RS_DATA		1
@@ -44,6 +44,26 @@
 
 #define DISPLAY_OFF	0
 #define DISPLAY_ON	(!DISPLAY_OFF)
+
+#define TXT_DATA_BUS "sld data bus: pin "
+#define TXT_CTRL_PIN "sld ctrl pin "
+
+/* if > 2.6.33 */
+/* static struct gpio sld_data_gpios[] = { */
+/* 	{ PIN_D0, GPIOF_OUT_INIT_LOW, TXT_DATA_BUS "0" }, */
+/* 	{ PIN_D1, GPIOF_OUT_INIT_LOW, TXT_DATA_BUS "1" }, */
+/* 	{ PIN_D2, GPIOF_OUT_INIT_LOW, TXT_DATA_BUS "2" }, */
+/* 	{ PIN_D3, GPIOF_OUT_INIT_LOW, TXT_DATA_BUS "3" }, */
+/* 	{ PIN_D4, GPIOF_OUT_INIT_LOW, TXT_DATA_BUS "4" }, */
+/* 	{ PIN_D5, GPIOF_OUT_INIT_LOW, TXT_DATA_BUS "5" }, */
+/* 	{ PIN_D6, GPIOF_OUT_INIT_LOW, TXT_DATA_BUS "6" }, */
+/* 	{ PIN_D7, GPIOF_OUT_INIT_LOW, TXT_DATA_BUS "7" }, */
+/* }; */
+
+/* static struct gpio sld_ctrl_gpios[] = } */
+/* 	{ PIN_D0, GPIOF_OUT_INIT_LOW, TXT_DATA_BUS "0" }, */
+/* } */
+/* #endif  */
 
 static ssize_t sld_write(struct file *filp, const char __user *buff,
 			 size_t count, loff_t *offp);
@@ -339,6 +359,30 @@ static void sld_hw_e(void)
 
 static int sld_hw_init(void)
 {
+	if (gpio_request(PIN_D0, TXT_DATA_BUS "0") < 0)
+		goto err_pin0;
+	if (gpio_request(PIN_D1, TXT_DATA_BUS "1") < 0)
+		goto err_pin1;
+	if (gpio_request(PIN_D2, TXT_DATA_BUS "2") < 0)
+		goto err_pin2;
+	if (gpio_request(PIN_D3, TXT_DATA_BUS "3") < 0)
+		goto err_pin3;
+	if (gpio_request(PIN_D4, TXT_DATA_BUS "4") < 0)
+		goto err_pin4;
+	if (gpio_request(PIN_D5, TXT_DATA_BUS "5") < 0)
+		goto err_pin5;
+	if (gpio_request(PIN_D6, TXT_DATA_BUS "6") < 0)
+		goto err_pin6;
+	if (gpio_request(PIN_D7, TXT_DATA_BUS "7") < 0)
+		goto err_pin7;
+
+	if (gpio_request(PIN_RS, TXT_CTRL_PIN "RS" ) < 0)
+		goto err_pin_rs;
+	if (gpio_request(PIN_RW, TXT_CTRL_PIN "RW" ) < 0)
+		goto err_pin_rw;
+	if (gpio_request(PIN_E, TXT_CTRL_PIN "E" ) < 0)
+		goto err_pin_e;
+
 	gpio_direction_output(PIN_RS, RS_INST);
 	gpio_direction_output(PIN_RW, RW_WRITE);
 	gpio_direction_output(PIN_E, 0);
@@ -351,6 +395,8 @@ static int sld_hw_init(void)
 	gpio_direction_output(PIN_D2, 0); /* 5x7 */
 	gpio_direction_output(PIN_D1, 0);
 	gpio_direction_output(PIN_D0, 0);
+
+	/* if > 2.6.33 gpio_request_array(sld_data_gpios, ARRAY_SIZE(sld_data_gpios)); */
 
 	/* sld_hw_function_set() */
 	/* sld_hw_cursor() */
@@ -376,6 +422,20 @@ static int sld_hw_init(void)
 	delay_1ms();
 	
 	return 0;
+
+err_pin_e:	gpio_free(PIN_E);
+err_pin_rw:	gpio_free(PIN_RW);
+err_pin_rs:	gpio_free(PIN_RS);
+
+err_pin7:	gpio_free(PIN_D7);
+err_pin6:	gpio_free(PIN_D6);
+err_pin5:	gpio_free(PIN_D5);
+err_pin4:	gpio_free(PIN_D4);
+err_pin3:	gpio_free(PIN_D3);
+err_pin2:	gpio_free(PIN_D2);
+err_pin1:	gpio_free(PIN_D1);
+err_pin0:	gpio_free(PIN_D0);
+	return -1;
 }
 
 static void sld_hw_clear(void)
@@ -437,6 +497,10 @@ static void delay_5ms(void)
 
 static int __init sld_init(void)
 {
+	if (sld_hw_init() < 0) {
+		printk(KERN_ERR "Failed on: requesting gpio\n");
+		return -1;
+	}
 
 #if STATIC_MAJOR
 	int res;
@@ -493,7 +557,6 @@ static int __init sld_init(void)
   device_create_file(device, &dev_attr_sld);
 */
 	sld_workqueue = create_singlethread_workqueue(SLD_WORKQUEUE);
-	sld_hw_init();
 
 	/* gpio_set_value(PIN_RS, RS_INST); */
 	/* gpio_set_value(PIN_RW, RW_WRITE); */
@@ -523,6 +586,20 @@ static void __exit sld_exit(void)
 	unregister_chrdev_region(sld_dev, SLD_COUNT);
 	sld_hw_clear();
 	sld_led(LED_OFF);
+	
+	gpio_free(PIN_E);
+	gpio_free(PIN_RW);
+	gpio_free(PIN_RS);
+
+	gpio_free(PIN_D7);
+	gpio_free(PIN_D6);
+	gpio_free(PIN_D5);
+	gpio_free(PIN_D4);
+	gpio_free(PIN_D3);
+	gpio_free(PIN_D2);
+	gpio_free(PIN_D1);
+	gpio_free(PIN_D0);
+
 	printk(KERN_INFO "Unloading "DEVICE_NAME".\n");
 }
 
